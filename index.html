@@ -26,6 +26,10 @@
                 <span>◈</span> Machine Simulator
             </button>
 
+            <button class="nav-item" id="conversion-nav" type="button">
+                <span>⇄</span> Machine Conversion
+            </button>
+
             <button class="nav-item" id="theory-nav" type="button">
                 <span>⌘</span> Theory & Concepts
             </button>
@@ -312,8 +316,67 @@
             </div>
             <!-- End Machine Simulator Section -->
 
+            <!-- Machine Conversion Workspace -->
+            <section id="conversion-section" class="conversion-section" hidden>
+                <header class="topbar">
+                    <div>
+                        <p class="eyebrow">THEORY OF COMPUTATION</p>
+                        <h1>Machine Conversion</h1>
+                        <p class="subtitle">Build a deterministic transducer and convert it between Mealy and Moore forms.</p>
+                    </div>
+                    <span class="version-badge">PROJECT · 02</span>
+                </header>
+
+                <section class="panel conversion-panel">
+                    <div class="section-heading">
+                        <div><p class="eyebrow">STEP 1 · DEFINE</p><h2>Input machine</h2>
+                        <p class="muted">Use comma-separated symbols. State names and alphabet symbols must be unique.</p></div>
+                    </div>
+                    <div class="conversion-fields">
+                        <div class="conversion-field"><label for="conv-type">Machine type</label>
+                            <select id="conv-type"><option value="mealy">Mealy machine</option><option value="moore">Moore machine</option></select></div>
+                        <div class="conversion-field"><label for="conv-states">States</label><input id="conv-states" value="A, B" autocomplete="off"></div>
+                        <div class="conversion-field"><label for="conv-inputs">Input alphabet</label><input id="conv-inputs" value="0, 1" autocomplete="off"></div>
+                        <div class="conversion-field"><label for="conv-outputs">Output alphabet</label><input id="conv-outputs" value="0, 1" autocomplete="off"></div>
+                        <div class="conversion-field"><label for="conv-start">Initial state</label><select id="conv-start"></select></div>
+                    </div>
+                    <div class="conversion-actions">
+                        <button class="btn-secondary" id="conv-build" type="button">Build transition editor</button>
+                        <button class="example-conversion-btn" id="conv-example" type="button">Load parity example</button>
+                    </div>
+                    <div id="conv-editor" class="conversion-editor"></div>
+                    <p id="conv-error" class="conversion-message" role="alert"></p>
+                    <div class="conversion-actions">
+                        <button class="btn-primary" id="conv-convert" type="button">Convert machine →</button>
+                    </div>
+                </section>
+
+                <section id="conv-result" class="conversion-result" hidden>
+                    <div class="conversion-result-heading"><div><p class="eyebrow">STEP 2 · RESULT</p><h2 id="conv-result-title">Converted machine</h2></div>
+                        <span class="step-counter" id="conv-state-count"></span></div>
+                    <div class="panel conversion-panel">
+                        <h3>Conversion explanation</h3>
+                        <ol id="conv-explanation" class="conversion-explanation"></ol>
+                    </div>
+                    <div class="panel conversion-panel">
+                        <div class="section-heading"><div><p class="eyebrow">OUTPUT</p><h2>Converted transition table</h2></div></div>
+                        <div class="table-wrapper"><table><thead id="conv-result-head"></thead><tbody id="conv-result-body"></tbody></table></div>
+                    </div>
+                    <div class="panel conversion-panel">
+                        <div class="section-heading"><div><p class="eyebrow">STRUCTURE</p><h2>Converted state diagram</h2></div></div>
+                        <div id="conv-diagram" class="conversion-diagram"></div>
+                    </div>
+                    <div class="panel conversion-panel equivalence-panel">
+                        <div><p class="eyebrow">STEP 3 · VERIFY</p><h2>Output equivalence</h2>
+                        <p class="muted">Checks every reachable state-pair and input symbol. The initial Moore output is treated as a separate initial marker.</p></div>
+                        <button class="btn-primary" id="conv-verify" type="button">Verify equivalence</button>
+                        <p id="conv-verify-result" class="conversion-message" aria-live="polite"></p>
+                    </div>
+                </section>
+            </section>
+
             <!-- Theory panel -->
-            <section class="panel theory-panel" id="theory-section">
+            <section class="panel theory-panel" id="theory-section" hidden>
                 <p class="eyebrow">THEORY REFERENCE</p>
                 <h2>Understand the machine</h2>
 

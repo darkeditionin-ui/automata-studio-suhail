@@ -710,3 +710,347 @@ theoryNav.addEventListener("click", () => {
    ========================================= */
 
 selectMachine("mealy");
+
+
+/* =========================================
+   MACHINE CONVERSION WORKSPACE
+   ========================================= */
+
+const conversionNav = document.getElementById("conversion-nav");
+const conversionSection = document.getElementById("conversion-section");
+const conversionType = document.getElementById("conv-type");
+const conversionStates = document.getElementById("conv-states");
+const conversionInputs = document.getElementById("conv-inputs");
+const conversionOutputs = document.getElementById("conv-outputs");
+const conversionStart = document.getElementById("conv-start");
+const conversionEditor = document.getElementById("conv-editor");
+const conversionError = document.getElementById("conv-error");
+const conversionResult = document.getElementById("conv-result");
+
+let conversionSourceMachine = null;
+let conversionTargetMachine = null;
+
+function escapeHTML(value) {
+    return String(value).replace(/[&<>"']/g, char => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[char]);
+}
+
+function parseSymbolList(value, label) {
+    const values = value.split(",").map(item => item.trim()).filter(Boolean);
+    if (!values.length) throw new Error(`${label} cannot be empty.`);
+    if (new Set(values).size !== values.length) throw new Error(`${label} contains duplicate values.`);
+    if (values.some(item => /[,\s]/.test(item))) {
+        throw new Error(`${label} values must not contain spaces or commas.`);
+    }
+    return values;
+}
+
+function updateConversionStartOptions(preferred) {
+    let statesList;
+    try { statesList = parseSymbolList(conversionStates.value, "States"); }
+    catch { statesList = ["A"]; }
+    const current = preferred || conversionStart.value;
+    conversionStart.innerHTML = statesList.map(state =>
+        `<option value="${escapeHTML(state)}">${escapeHTML(state)}</option>`
+    ).join("");
+    conversionStart.value = statesList.includes(current) ? current : statesList[0];
+}
+
+function buildConversionEditor() {
+    try {
+        const statesList = parseSymbolList(conversionStates.value, "States");
+        const inputList = parseSymbolList(conversionInputs.value, "Input alphabet");
+        const outputList = parseSymbolList(conversionOutputs.value, "Output alphabet");
+        updateConversionStartOptions();
+        const type = conversionType.value;
+        const header = type === "mealy"
+            ? `<th>STATE</th>${inputList.map(symbol => `<th>INPUT ${escapeHTML(symbol)} · NEXT / OUTPUT</th>`).join("")}`
+            : `<th>STATE</th><th>STATE OUTPUT</th>${inputList.map(symbol => `<th>INPUT ${escapeHTML(symbol)} · NEXT STATE</th>`).join("")}`;
+        const rows = statesList.map((state, stateIndex) => {
+            const cells = inputList.map((symbol, inputIndex) => {
+                const key = `${stateIndex}_${inputIndex}`;
+                const destination = `<select data-role="next" data-key="${key}">${statesList.map(target =>
+                    `<option value="${escapeHTML(target)}">${escapeHTML(target)}</option>`).join("")}</select>`;
+                if (type === "mealy") {
+                    return `<td class="conversion-cell"><small>Next state</small>${destination}<small>Output</small><select data-role="edge-output" data-key="${key}">${outputList.map(output => `<option value="${escapeHTML(output)}">${escapeHTML(output)}</option>`).join("")}</select></td>`;
+                }
+                return `<td class="conversion-cell">${destination}</td>`;
+            }).join("");
+            const stateOutput = type === "moore"
+                ? `<td class="conversion-cell"><select data-role="state-output" data-state="${escapeHTML(state)}">${outputList.map(output => `<option value="${escapeHTML(output)}">${escapeHTML(output)}</option>`).join("")}</select></td>`
+                : "";
+            return `<tr><td><strong>${escapeHTML(state)}</strong>${state === conversionStart.value ? " · START" : ""}</td>${stateOutput}${cells}</tr>`;
+        }).join("");
+        conversionEditor.innerHTML = `<h3>Transition and output definitions</h3><div class="table-wrapper"><table><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table></div>`;
+        conversionError.textContent = "Complete every transition. The editor starts with A and B as an example structure.";
+        conversionError.className = "conversion-message";
+        conversionResult.hidden = true;
+    } catch (error) {
+        conversionEditor.innerHTML = "";
+        showConversionError(error.message);
+    }
+}
+
+function showConversionError(message) {
+    conversionError.textContent = message;
+    conversionError.className = "conversion-message error";
+}
+
+function collectConversionMachine() {
+    const statesList = parseSymbolList(conversionStates.value, "States");
+    const inputList = parseSymbolList(conversionInputs.value, "Input alphabet");
+    const outputList = parseSymbolList(conversionOutputs.value, "Output alphabet");
+    const type = conversionType.value;
+    const start = conversionStart.value;
+    if (!statesList.includes(start)) throw new Error("Choose a valid initial state.");
+
+    const transitionsMap = {};
+    const stateOutputs = {};
+    statesList.forEach(state => {
+        transitionsMap[state] = {};
+        if (type === "moore") {
+            const select = conversionEditor.querySelector(`[data-role="state-output"][data-state="${CSS.escape(state)}"]`);
+            if (!select || !outputList.includes(select.value)) throw new Error(`Choose a valid output for state ${state}.`);
+            stateOutputs[state] = select.value;
+        }
+        inputList.forEach((symbol, index) => {
+            const key = `${statesList.indexOf(state)}_${index}`;
+            const nextSelect = conversionEditor.querySelector(`[data-role="next"][data-key="${key}"]`);
+            if (!nextSelect || !statesList.includes(nextSelect.value)) throw new Error(`Missing or invalid destination for ${state} on input ${symbol}.`);
+            const entry = { next: nextSelect.value };
+            if (type === "mealy") {
+                const outputSelect = conversionEditor.querySelector(`[data-role="edge-output"][data-key="${key}"]`);
+                if (!outputSelect || !outputList.includes(outputSelect.value)) throw new Error(`Missing or invalid output for ${state} on input ${symbol}.`);
+                entry.output = outputSelect.value;
+            }
+            transitionsMap[state][symbol] = entry;
+        });
+    });
+    return { type, states: statesList, inputs: inputList, outputs: outputList, start, transitions: transitionsMap, stateOutputs };
+}
+
+function convertMealyToMoore(machine) {
+    const initial = `${machine.start}⟨start⟩`;
+    const statesList = [initial];
+    const stateOutputs = { [initial]: "ε" };
+    const transitionsMap = { [initial]: {} };
+    const pairNames = new Map();
+    const queue = [];
+    const getPairName = (state, output) => {
+        const key = JSON.stringify([state, output]);
+        if (!pairNames.has(key)) {
+            const name = `${state}⟨${output}⟩`;
+            pairNames.set(key, name);
+            statesList.push(name);
+            stateOutputs[name] = output;
+            transitionsMap[name] = {};
+            queue.push({ original: state, name });
+        }
+        return pairNames.get(key);
+    };
+    machine.inputs.forEach(symbol => {
+        const edge = machine.transitions[machine.start][symbol];
+        transitionsMap[initial][symbol] = { next: getPairName(edge.next, edge.output) };
+    });
+    while (queue.length) {
+        const item = queue.shift();
+        machine.inputs.forEach(symbol => {
+            const edge = machine.transitions[item.original][symbol];
+            transitionsMap[item.name][symbol] = { next: getPairName(edge.next, edge.output) };
+        });
+    }
+    return {
+        type: "moore", states: statesList, inputs: machine.inputs, outputs: machine.outputs,
+        start: initial, transitions: transitionsMap, stateOutputs
+    };
+}
+
+function convertMooreToMealy(machine) {
+    const transitionsMap = {};
+    machine.states.forEach(state => {
+        transitionsMap[state] = {};
+        machine.inputs.forEach(symbol => {
+            const next = machine.transitions[state][symbol].next;
+            transitionsMap[state][symbol] = { next, output: machine.stateOutputs[next] };
+        });
+    });
+    return { type: "mealy", states: [...machine.states], inputs: machine.inputs,
+        outputs: machine.outputs, start: machine.start, transitions: transitionsMap, stateOutputs: {} };
+}
+
+function renderConvertedTable(machine) {
+    const head = document.getElementById("conv-result-head");
+    const body = document.getElementById("conv-result-body");
+    if (machine.type === "mealy") {
+        head.innerHTML = `<tr><th>STATE</th>${machine.inputs.map(symbol => `<th>INPUT ${escapeHTML(symbol)} · NEXT / OUTPUT</th>`).join("")}</tr>`;
+        body.innerHTML = machine.states.map(state => `<tr><td><strong>${escapeHTML(state)}</strong>${state === machine.start ? " · START" : ""}</td>${machine.inputs.map(symbol => {
+            const edge = machine.transitions[state][symbol];
+            return `<td>${escapeHTML(edge.next)} <span class="transition-table-active">/ ${escapeHTML(edge.output)}</span></td>`;
+        }).join("")}</tr>`).join("");
+    } else {
+        head.innerHTML = `<tr><th>STATE</th><th>STATE OUTPUT</th>${machine.inputs.map(symbol => `<th>INPUT ${escapeHTML(symbol)} · NEXT STATE</th>`).join("")}</tr>`;
+        body.innerHTML = machine.states.map(state => `<tr><td><strong>${escapeHTML(state)}</strong>${state === machine.start ? " · START" : ""}</td><td><span class="transition-table-active">${escapeHTML(machine.stateOutputs[state])}</span></td>${machine.inputs.map(symbol => `<td>${escapeHTML(machine.transitions[state][symbol].next)}</td>`).join("")}</tr>`).join("");
+    }
+}
+
+function renderConvertedDiagram(machine) {
+    const container = document.getElementById("conv-diagram");
+    const count = machine.states.length;
+    const width = Math.max(620, count * 155);
+    const height = 250;
+    const positions = {};
+    machine.states.forEach((state, index) => { positions[state] = { x: 85 + index * ((width - 170) / Math.max(1, count - 1)), y: 130 }; });
+    let edges = "";
+    machine.states.forEach(state => machine.inputs.forEach((symbol, index) => {
+        const edge = machine.transitions[state][symbol];
+        const from = positions[state], to = positions[edge.next];
+        const label = machine.type === "mealy" ? `${symbol}/${edge.output}` : symbol;
+        const midX = (from.x + to.x) / 2;
+        const curveY = from.x === to.x ? 65 + index * 22 : (index % 2 ? 205 : 55);
+        edges += `<path d="M ${from.x} ${from.y - 28} Q ${midX} ${curveY} ${to.x} ${to.y - 28}" fill="none" stroke="#858ba7" stroke-width="1.5"/><text x="${midX}" y="${curveY - 5}" text-anchor="middle" fill="#d6d9eb" font-size="11">${escapeHTML(label)}</text>`;
+    }));
+    const nodes = machine.states.map(state => {
+        const pos = positions[state];
+        const output = machine.type === "moore" ? `<text x="${pos.x}" y="${pos.y + 20}" text-anchor="middle" fill="#63d9e8" font-size="11">${escapeHTML(machine.stateOutputs[state])}</text>` : "";
+        return `<circle cx="${pos.x}" cy="${pos.y}" r="29" fill="#29234b" stroke="#9b8cff" stroke-width="2"/><text x="${pos.x}" y="${pos.y + 4}" text-anchor="middle" fill="white" font-size="11">${escapeHTML(state)}</text>${output}`;
+    }).join("");
+    const start = positions[machine.start];
+    container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Converted machine state diagram"><defs><marker id="conv-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#858ba7"/></marker></defs><path d="M ${start.x - 65} ${start.y} L ${start.x - 31} ${start.y}" stroke="#53d6a2" stroke-width="2" fill="none" marker-end="url(#conv-arrow)"/>${edges}${nodes}</svg>`;
+}
+
+function renderConversionResult(source, target) {
+    document.getElementById("conv-result-title").textContent = target.type === "mealy" ? "Equivalent Mealy machine" : "Equivalent Moore machine";
+    document.getElementById("conv-state-count").textContent = `${target.states.length} states`;
+    const steps = target.type === "moore" ? [
+        "Create a new initial state with an ε output marker so the converted machine does not add an unwanted output before the first input.",
+        "For every reachable original state and each distinct output produced when entering it, create a Moore state (original state, incoming output).",
+        "For each input, follow the original Mealy transition and move to the pair containing its destination state and transition output.",
+        "Only reachable state/output pairs are included; states may split when they can be entered with different outputs."
+    ] : [
+        "Keep the original Moore states, initial state, and transition destinations unchanged.",
+        "For every transition q --a--> p, assign the Mealy transition output equal to the Moore output of destination state p.",
+        "The Moore initial-state output is an initial marker and is not emitted by a standard Mealy transition."
+    ];
+    document.getElementById("conv-explanation").innerHTML = steps.map(step => `<li>${step}</li>`).join("");
+    renderConvertedTable(target);
+    renderConvertedDiagram(target);
+    document.getElementById("conv-verify-result").textContent = "";
+    document.getElementById("conv-verify-result").className = "conversion-message";
+    conversionResult.hidden = false;
+}
+
+function verifyTransducerEquivalence(left, right) {
+    if (left.inputs.length !== right.inputs.length || left.inputs.some((symbol, i) => symbol !== right.inputs[i])) {
+        return { equivalent: false, reason: "The input alphabets do not match." };
+    }
+    const queue = [[left.start, right.start]];
+    const visited = new Set();
+    while (queue.length) {
+        const [leftState, rightState] = queue.shift();
+        const pairKey = JSON.stringify([leftState, rightState]);
+        if (visited.has(pairKey)) continue;
+        visited.add(pairKey);
+        for (const symbol of left.inputs) {
+            const leftEdge = left.transitions[leftState][symbol];
+            const rightEdge = right.transitions[rightState][symbol];
+            const leftOutput = left.type === "mealy" ? leftEdge.output : left.stateOutputs[leftEdge.next];
+            const rightOutput = right.type === "mealy" ? rightEdge.output : right.stateOutputs[rightEdge.next];
+            if (leftOutput !== rightOutput) {
+                return { equivalent: false, reason: `Output mismatch from state pair (${leftState}, ${rightState}) on input ${symbol}: ${leftOutput} ≠ ${rightOutput}.` };
+            }
+            queue.push([leftEdge.next, rightEdge.next]);
+        }
+    }
+    return { equivalent: true, pairsChecked: visited.size };
+}
+
+function performConversion() {
+    try {
+        const source = collectConversionMachine();
+        const target = source.type === "mealy" ? convertMealyToMoore(source) : convertMooreToMealy(source);
+        conversionSourceMachine = source;
+        conversionTargetMachine = target;
+        renderConversionResult(source, target);
+        conversionError.textContent = `Successfully converted ${source.type.toUpperCase()} to ${target.type.toUpperCase()}.`;
+        conversionError.className = "conversion-message success";
+    } catch (error) {
+        showConversionError(error.message);
+    }
+}
+
+function loadParityConversionExample() {
+    // Preserve the user's selected machine type; the same parity machine
+    // has different output placement in Mealy and Moore representations.
+    const selectedType = conversionType.value;
+    conversionStates.value = "E, O";
+    conversionInputs.value = "0, 1";
+    conversionOutputs.value = "0, 1";
+    updateConversionStartOptions("E");
+    buildConversionEditor();
+
+    const destinations = {
+        "0_0": "E", "0_1": "O",
+        "1_0": "O", "1_1": "E"
+    };
+
+    Object.entries(destinations).forEach(([key, next]) => {
+        const nextSelect = conversionEditor.querySelector(`[data-role="next"][data-key="${key}"]`);
+        if (nextSelect) nextSelect.value = next;
+    });
+
+    if (selectedType === "mealy") {
+        const edgeOutputs = { "0_0": "0", "0_1": "1", "1_0": "1", "1_1": "0" };
+        Object.entries(edgeOutputs).forEach(([key, output]) => {
+            const outputSelect = conversionEditor.querySelector(`[data-role="edge-output"][data-key="${key}"]`);
+            if (outputSelect) outputSelect.value = output;
+        });
+        conversionError.textContent = "Parity-tracking Mealy example loaded. Convert it to Moore.";
+    } else {
+        const stateOutputs = { E: "0", O: "1" };
+        Object.entries(stateOutputs).forEach(([state, output]) => {
+            const outputSelect = conversionEditor.querySelector(`[data-role="state-output"][data-state="${CSS.escape(state)}"]`);
+            if (outputSelect) outputSelect.value = output;
+        });
+        conversionError.textContent = "Parity-tracking Moore example loaded. Convert it to Mealy.";
+    }
+
+    conversionStart.value = "E";
+    conversionError.className = "conversion-message success";
+    conversionSourceMachine = null;
+    conversionTargetMachine = null;
+    conversionResult.hidden = true;
+}
+
+conversionNav.addEventListener("click", () => navigateToSection(conversionSection, conversionNav));
+const originalNavigateToSection = navigateToSection;
+function navigateToSection(section, activeNav) {
+    simulatorNav.classList.toggle("active", activeNav === simulatorNav);
+    conversionNav.classList.toggle("active", activeNav === conversionNav);
+    theoryNav.classList.toggle("active", activeNav === theoryNav);
+    simulatorSection.hidden = section !== simulatorSection;
+    conversionSection.hidden = section !== conversionSection;
+    theorySection.hidden = section !== theorySection;
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+conversionStates.addEventListener("input", () => updateConversionStartOptions());
+document.getElementById("conv-build").addEventListener("click", buildConversionEditor);
+document.getElementById("conv-example").addEventListener("click", loadParityConversionExample);
+document.getElementById("conv-convert").addEventListener("click", performConversion);
+document.getElementById("conv-verify").addEventListener("click", () => {
+    const result = verifyTransducerEquivalence(conversionSourceMachine, conversionTargetMachine);
+    const output = document.getElementById("conv-verify-result");
+    if (result.equivalent) {
+        output.textContent = `Equivalent: all reachable state-pairs checked (${result.pairsChecked} pairs). Outputs match for every possible input string, ignoring the Moore initial-output marker.`;
+        output.className = "conversion-message success";
+    } else {
+        output.textContent = `Not equivalent. ${result.reason}`;
+        output.className = "conversion-message error";
+    }
+});
+conversionType.addEventListener("change", buildConversionEditor);
+
+// Initialize the conversion editor without changing the existing simulator.
+updateConversionStartOptions("A");
+buildConversionEditor();

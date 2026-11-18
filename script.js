@@ -43,6 +43,12 @@ const resultBox = document.getElementById("result-box");
 
 const stepCounter = document.getElementById("step-counter");
 
+// Sidebar navigation
+const simulatorNav = document.getElementById("simulator-nav");
+const theoryNav = document.getElementById("theory-nav");
+const simulatorSection = document.getElementById("simulator-section");
+const theorySection = document.getElementById("theory-section");
+
 const statType = document.getElementById("stat-type");
 const statStates = document.getElementById("stat-states");
 const statAlphabet = document.getElementById("stat-alphabet");
@@ -61,7 +67,6 @@ let generatedOutput = [];
 
 // Tracks the most recently executed transition.
 let lastTransition = null;
-
 
 
 /* =========================================
@@ -109,9 +114,9 @@ function renderDiagram() {
     const isMealy = machineType === "mealy";
 
     const edgeActive = (from, symbol) =>
-    lastTransition !== null &&
-    lastTransition.from === from &&
-    lastTransition.symbol === symbol;
+        lastTransition !== null &&
+        lastTransition.from === from &&
+        lastTransition.symbol === symbol;
 
     const edgeColor = (from, symbol) =>
         edgeActive(from, symbol) ? "#63d9e8" : "#858ba7";
@@ -272,7 +277,6 @@ function renderDiagram() {
 }
 
 
-
 /* =========================================
    TRANSITION TABLE
    ========================================= */
@@ -394,11 +398,14 @@ function renderFormalDefinition() {
     }
 }
 
+
 /* =========================================
    SIMULATION INITIALIZATION
    ========================================= */
 
 function initializeSimulation(input) {
+    stepBtn.disabled = false;
+
     currentState = startState;
     activeInput = input;
     nextIndex = 0;
@@ -478,8 +485,6 @@ function processNextStep() {
 
     nextIndex++;
 
-    
-
     renderTrace();
     renderResults();
     renderDiagram();
@@ -487,6 +492,9 @@ function processNextStep() {
     if (nextIndex === activeInput.length) {
         statStatus.textContent = "Complete";
         statStatusDetail.textContent = "Input fully processed";
+
+        // Disable Step after the final symbol.
+        stepBtn.disabled = true;
     } else {
         statStatus.textContent = "Running";
         statStatusDetail.textContent =
@@ -541,6 +549,7 @@ function stepSimulation() {
 
     if (nextIndex >= activeInput.length) {
         resultMessage.textContent = "All input symbols processed.";
+        stepBtn.disabled = true;
         return;
     }
 
@@ -627,6 +636,9 @@ function showError(message) {
    ========================================= */
 
 function resetSimulation() {
+    // Re-enable Step when resetting.
+    stepBtn.disabled = false;
+
     currentState = startState;
     activeInput = null;
     nextIndex = 0;
@@ -653,6 +665,13 @@ exampleBtn.addEventListener("click", () => {
     resetSimulation();
 });
 
+// Allow a new step-by-step run when the input is edited.
+inputField.addEventListener("input", () => {
+    if (inputField.value.trim() !== activeInput) {
+        stepBtn.disabled = false;
+    }
+});
+
 // Press Enter to run.
 inputField.addEventListener("keydown", event => {
     if (event.key === "Enter") {
@@ -662,18 +681,28 @@ inputField.addEventListener("keydown", event => {
 
 
 /* =========================================
-   THEORY NAVIGATION
+   SIDEBAR NAVIGATION
    ========================================= */
 
-document.getElementById("theory-nav").addEventListener(
-    "click",
-    () => {
-        document.getElementById("theory-section").scrollIntoView({
-            behavior: "smooth",
-            block: "start"
-        });
-    }
-);
+function navigateToSection(section, activeNav) {
+    // Update the selected sidebar item.
+    simulatorNav.classList.toggle("active", activeNav === simulatorNav);
+    theoryNav.classList.toggle("active", activeNav === theoryNav);
+
+    // Scroll to the requested section, even if its tab was already selected.
+    section.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+    });
+}
+
+simulatorNav.addEventListener("click", () => {
+    navigateToSection(simulatorSection, simulatorNav);
+});
+
+theoryNav.addEventListener("click", () => {
+    navigateToSection(theorySection, theoryNav);
+});
 
 
 /* =========================================
